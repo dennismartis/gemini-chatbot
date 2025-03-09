@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 from google import genai
+from google.genai import types
 
 st.title("Gemini Chatbot")
 
@@ -33,10 +34,51 @@ except Exception as e:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# Initialize system prompt in session state if it doesn't exist
+if "system_prompt" not in st.session_state:
+    st.session_state.system_prompt = ""
+
+# Add system prompt expander
+with st.sidebar:
+    with st.expander("System Prompt"):
+        new_system_prompt = st.text_area(
+            "Define how the chatbot should behave:",
+            value=st.session_state.system_prompt,
+            height=200,
+            placeholder="Example: You are a helpful assistant that specializes in Python programming."
+        )
+        
+        # Check if system prompt has changed
+        if st.button("Apply System Prompt"):
+            if new_system_prompt != st.session_state.system_prompt:
+                st.session_state.system_prompt = new_system_prompt
+                st.session_state.messages = []  # Clear chat history
+                
+                # Mark that we need to recreate the chat
+                if "gemini_chat" in st.session_state:
+                    del st.session_state.gemini_chat
+
 # Initialize Gemini chat in session state
 if "gemini_chat" not in st.session_state:
     try:
-        st.session_state.gemini_chat = genai_client.chats.create(model="gemini-2.0-flash")
+        # Create a standard chat without system instructions first
+        st.session_state.gemini_chat = genai_client.chats.create(
+            model="gemini-2.0-flash"
+        )
+        
+        # Then, if system prompt exists, send it using the proper method
+        if st.session_state.system_prompt:
+            try:
+                first_message = st.session_state.gemini_chat.send_message(
+                    "",
+                    config=types.GenerateContentConfig(
+                        system_instruction=st.session_state.system_prompt
+                    )
+                )
+                st.success("System prompt applied successfully!")
+            except Exception as e:
+                st.warning(f"System prompt couldn't be applied: {str(e)}")
+                st.warning("Continuing with default model behavior.")
     except Exception as e:
         st.error(f"Error initializing Gemini: {str(e)}")
         st.stop()
@@ -48,26 +90,31 @@ for message in st.session_state.messages:
 
 # React to user input
 if prompt := st.chat_input("Ask me anything..."):
-    # Display user message in chat message container
+# Add user message to chat history
     with st.chat_message("user"):
+# Add user message to chat history
         st.markdown(prompt)
     
-    # Add user message to chat history
+# Add user message to chat history
     st.session_state.messages.append({"role": "user", "content": prompt})
     
     try:
-        # Display a spinner while generating the response
         with st.spinner("Thinking..."):
-            # Generate response using Gemini
-            response = st.session_state.gemini_chat.send_message(prompt)
+            if st.session_state.system_prompt:
+                response = st.session_state.gemini_chat.send_message(
+                    prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=st.session_state.system_prompt
+                    )
+                )
+            else:
+                response = st.session_state.gemini_chat.send_message(prompt)
+            
             response_text = response.text
         
-        # Display assistant response in chat message container
         with st.chat_message("assistant"):
             st.markdown(response_text)
         
-        # Add assistant response to chat history
         st.session_state.messages.append({"role": "assistant", "content": response_text})
-    
     except Exception as e:
         st.error(f"Error generating response: {str(e)}")
