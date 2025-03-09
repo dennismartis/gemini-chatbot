@@ -21,3 +21,6 @@ Thumbs.db
 
 # Documentation
 /docs/
+
+#UV
+uv.lock
